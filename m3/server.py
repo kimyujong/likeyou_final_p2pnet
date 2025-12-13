@@ -23,8 +23,10 @@ import cv2
 import numpy as np
 from dotenv import load_dotenv
 
-# 환경변수 로드
-load_dotenv()
+from pathlib import Path
+
+env_path = Path("/home/ubuntu/p2pnet-api/.env")
+load_dotenv(dotenv_path=env_path)
 
 # M3 모듈 import
 from api import M3CongestionAPI

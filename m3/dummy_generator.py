@@ -22,8 +22,10 @@ from typing import List, Set
 from dotenv import load_dotenv
 from supabase import create_client, Client
 
-# 환경변수 로드
-load_dotenv()
+from pathlib import Path
+
+env_path = Path("/home/ubuntu/p2pnet-api/.env")
+load_dotenv(dotenv_path=env_path)
 
 # 로깅 설정 (간단히 print 사용)
 def log(msg):

@@ -12,8 +12,10 @@ from dotenv import load_dotenv
 
 from api import M3CongestionAPI
 from utils import put_korean_text
+from pathlib import Path
 
-load_dotenv()
+env_path = Path("/home/ubuntu/p2pnet-api/.env")
+load_dotenv(dotenv_path=env_path)
 
 
 def visualize_video_analysis(
