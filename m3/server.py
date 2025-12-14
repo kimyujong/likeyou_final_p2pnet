@@ -58,6 +58,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# CCTV ID 매핑 (임시)
+# 사용자가 "CCTV-01" 등을 입력하면 실제 UUID로 변환
+CCTV_MAPPING = {
+    "CCTV-01": "02cb83a2-beaa-4977-8644-41c2fa97ce7f",
+    "CCTV-02": "0838df69-cf62-4945-ad4b-227820f05e82"
+}
+
 # 전역 변수
 m3_api = None
 dummy_thread_started = False  # 더미 스레드 실행 여부 체크
@@ -153,12 +160,15 @@ async def start_analysis(cctv_no: str, video_path: Optional[str] = None):
     # 임시: video_path가 없으면 기본 테스트 영상 사용
     if not video_path:
         # EC2 환경에 맞는 절대 경로로 수정
-        video_path = "/home/ubuntu/storage/m3/IMG_3544.mov"
+        video_path = "/home/ubuntu/storage/m3/IMG_3577.mov"
         if not os.path.exists(video_path):
              # 로컬 테스트용 백업 경로 (윈도우 등)
              video_path = "./video/IMG_3544.mov"
         
-    m3_api.start_background_task(video_path=video_path, cctv_no=cctv_no)
+    # CCTV ID 매핑 적용
+    mapped_cctv_no = CCTV_MAPPING.get(cctv_no, cctv_no)
+    
+    m3_api.start_background_task(video_path=video_path, cctv_no=mapped_cctv_no)
     
     # 더미 데이터 생성기 시작 (최초 1회만)
     global dummy_thread_started
@@ -169,8 +179,8 @@ async def start_analysis(cctv_no: str, video_path: Optional[str] = None):
         # dummy_thread_started = True
         logger.info("ℹ️ 더미 데이터 생성기는 현재 비활성화 상태입니다. (P2PNet 단독 테스트)")
 
-    logger.info(f"▶️ 분석 시작 요청: {cctv_no} (Source: {video_path})")
-    return {"status": "started", "cctv_no": cctv_no, "source": video_path}
+    logger.info(f"▶️ 분석 시작 요청: {cctv_no} -> {mapped_cctv_no} (Source: {video_path})")
+    return {"status": "started", "cctv_no": cctv_no, "mapped_id": mapped_cctv_no, "source": video_path}
 
 
 @app.post("/control/stop")
@@ -279,9 +289,12 @@ async def analyze_image(
         }
         risk_level_int = risk_level_map.get(result['risk_level'], 1)
         
+        # CCTV ID 매핑 적용
+        mapped_cctv_no = CCTV_MAPPING.get(cctv_no, cctv_no)
+
         # Supabase DAT_Crowd_Detection 테이블에 저장
         await save_detection(
-            cctv_no=cctv_no,
+            cctv_no=mapped_cctv_no,
             person_count=result['count'],
             congestion_level=int(result['pct']),
             risk_level_int=risk_level_int

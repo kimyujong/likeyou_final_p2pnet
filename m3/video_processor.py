@@ -54,10 +54,12 @@ class VideoProcessor:
         
         try:
             while not self.stop_event.is_set():
-                # 1. 5프레임 캡처 (0.5초 간격)
+                # 1. 프레임 캡처 (CPU 환경 고려: 5 -> 1프레임으로 축소)
                 frames_data = []
                 
-                for _ in range(5):
+                # CPU 모드에서는 속도를 위해 1프레임만 분석
+                # GPU 모드라면 range(3~5) 권장
+                for _ in range(1):
                     if not cap.isOpened():
                         cap = cv2.VideoCapture(video_path)
                     
