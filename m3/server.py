@@ -152,7 +152,11 @@ async def start_analysis(cctv_no: str, video_path: Optional[str] = None):
     
     # 임시: video_path가 없으면 기본 테스트 영상 사용
     if not video_path:
-        video_path = "./video/IMG_3544.mov"
+        # EC2 환경에 맞는 절대 경로로 수정
+        video_path = "/home/ubuntu/storage/m3/IMG_3544.mov"
+        if not os.path.exists(video_path):
+             # 로컬 테스트용 백업 경로 (윈도우 등)
+             video_path = "./video/IMG_3544.mov"
         
     m3_api.start_background_task(video_path=video_path, cctv_no=cctv_no)
     
