@@ -24,8 +24,9 @@ from supabase import create_client, Client
 
 from pathlib import Path
 
-env_path = Path("/home/ubuntu/p2pnet-api/.env")
-load_dotenv(dotenv_path=env_path)
+# env_path = Path("/home/ubuntu/p2pnet-api/.env")
+# load_dotenv(dotenv_path=env_path)
+load_dotenv()
 
 # 로깅 설정 (간단히 print 사용)
 def log(msg):

@@ -122,11 +122,19 @@ class VideoProcessor:
                 except Exception as e:
                     logger.error(f"DB 저장 실패: {e}")
                 
-                # 5. 다음 주기까지 대기 (Sleep)
-                # 5프레임 찍느라 2.5초 썼으므로 나머지만 대기
+                # 5. 다음 주기까지 대기 및 영상 건너뛰기
+                # 분석에 걸린 시간(약 2.5초)을 고려하여 남은 시간만큼 대기
                 wait_time = max(0, interval_seconds - 2.5)
                 logger.info(f"💤 {wait_time}초 대기...")
                 await asyncio.sleep(wait_time)
+                
+                # [중요] 현실 시간이 흐른 만큼 영상 위치도 강제로 이동 (Sync)
+                # 현재 위치에서 interval_seconds 만큼 점프
+                if cap.isOpened():
+                    current_pos = cap.get(cv2.CAP_PROP_POS_MSEC)
+                    next_pos = current_pos + (interval_seconds * 1000)
+                    cap.set(cv2.CAP_PROP_POS_MSEC, next_pos)
+                    logger.info(f"⏩ 영상 점프: {current_pos/1000:.1f}s -> {next_pos/1000:.1f}s")
                 
         finally:
             cap.release()

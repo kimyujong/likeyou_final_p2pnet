@@ -87,7 +87,7 @@ class M3CongestionAPI:
         
         print(f"✅ M3CongestionAPI 초기화 완료")
         
-    def start_background_task(self, video_path, cctv_no):
+    def start_background_task(self, video_path, cctv_no, interval_seconds=60):
         """백그라운드 분석 시작"""
         if not os.path.exists(video_path):
             print(f"⚠️ 영상 파일 없음: {video_path}")
@@ -97,7 +97,7 @@ class M3CongestionAPI:
             self.processor.process_stream_simulation(
                 video_path=video_path,
                 cctv_no=cctv_no,
-                interval_seconds=60
+                interval_seconds=interval_seconds
             )
         )
     

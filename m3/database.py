@@ -16,6 +16,7 @@ from pathlib import Path
 
 env_path = Path("/home/ubuntu/p2pnet-api/.env")
 load_dotenv(dotenv_path=env_path)
+# load_dotenv()
 
 logger = logging.getLogger(__name__)
 
