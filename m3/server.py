@@ -60,6 +60,7 @@ app.add_middleware(
 
 # 전역 변수
 m3_api = None
+dummy_thread_started = False  # 더미 스레드 실행 여부 체크
 
 # Pydantic 모델
 class AnalysisResponse(BaseModel):
@@ -100,8 +101,9 @@ async def startup_event():
         logger.info("🚀 M3 P2PNet API 서버 시작 중...")
         
         # 1. 더미 생성기 백그라운드 실행 (Daemon Thread)
-        dummy_thread = threading.Thread(target=run_dummy_generator, daemon=True)
-        dummy_thread.start()
+        # 사용자의 요청으로 잠시 비활성화 (P2PNet 단독 테스트)
+        # dummy_thread = threading.Thread(target=run_dummy_generator, daemon=True)
+        # dummy_thread.start()
         
         # 2. 환경변수 확인
         model_path = os.getenv('MODEL_PATH')
@@ -154,6 +156,15 @@ async def start_analysis(cctv_no: str, video_path: Optional[str] = None):
         
     m3_api.start_background_task(video_path=video_path, cctv_no=cctv_no)
     
+    # 더미 데이터 생성기 시작 (최초 1회만)
+    global dummy_thread_started
+    if not dummy_thread_started:
+        # P2PNet 모델 확인을 위해 잠시 주석 처리 (나중에 주석 해제하면 1, 2번 기능 동작)
+        # dummy_thread = threading.Thread(target=run_dummy_generator, daemon=True)
+        # dummy_thread.start()
+        # dummy_thread_started = True
+        logger.info("ℹ️ 더미 데이터 생성기는 현재 비활성화 상태입니다. (P2PNet 단독 테스트)")
+
     logger.info(f"▶️ 분석 시작 요청: {cctv_no} (Source: {video_path})")
     return {"status": "started", "cctv_no": cctv_no, "source": video_path}
 
@@ -174,7 +185,7 @@ async def stop_analysis(cctv_no: str):
 @app.on_event("shutdown")
 async def shutdown_event():
     """서버 종료 시 실행"""
-    logger.info("🛑 M3 P2PNet API 서버 종료 중...")
+    logger.info("M3 P2PNet API 서버 종료 중...")
 
 
 @app.get("/")
