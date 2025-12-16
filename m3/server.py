@@ -25,8 +25,8 @@ from dotenv import load_dotenv
 
 from pathlib import Path
 
-# env_path = Path("/home/ubuntu/p2pnet-api/.env")
-env_path = Path("C:/Users/kyj/OneDrive/Desktop/p2pnet_package/m3/.env")
+env_path = Path("/home/ubuntu/p2pnet-api/.env")
+# env_path = Path("C:/Users/kyj/OneDrive/Desktop/p2pnet_package/m3/.env")
 load_dotenv(dotenv_path=env_path)
 
 # M3 모듈 import
