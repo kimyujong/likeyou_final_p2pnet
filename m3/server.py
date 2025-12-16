@@ -25,7 +25,8 @@ from dotenv import load_dotenv
 
 from pathlib import Path
 
-env_path = Path("/home/ubuntu/p2pnet-api/.env")
+# env_path = Path("/home/ubuntu/p2pnet-api/.env")
+env_path = Path("C:/Users/kyj/OneDrive/Desktop/p2pnet_package/m3/.env")
 load_dotenv(dotenv_path=env_path)
 
 # M3 모듈 import
@@ -58,12 +59,8 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# CCTV ID 매핑 (임시)
-# 사용자가 "CCTV-01" 등을 입력하면 실제 UUID로 변환
-CCTV_MAPPING = {
-    "CCTV-01": "02cb83a2-beaa-4977-8644-41c2fa97ce7f",
-    "CCTV-02": "0838df69-cf62-4945-ad4b-227820f05e82"
-}
+# CCTV ID 매핑 (제거됨 - DB 조회 방식으로 변경)
+# CCTV_MAPPING = {}
 
 # 전역 변수
 m3_api = None
@@ -150,48 +147,68 @@ async def startup_event():
 
 
 @app.post("/control/start")
-async def start_analysis(cctv_no: str, video_path: Optional[str] = None):
+async def start_analysis(cctv_idx: str, video_path: Optional[str] = None):
     """
     특정 CCTV 분석 시작 (On-Demand)
+    Args:
+        cctv_idx: CCTV 식별자 (DB의 cctv_idx 예: "CCTV_01")
+        video_path: 영상 경로 (선택)
     """
     if m3_api is None:
         raise HTTPException(status_code=503, detail="모델이 로드되지 않았습니다.")
     
-    # 임시: video_path가 없으면 기본 테스트 영상 사용
+    # CCTV ID 매핑 및 영상 주소 조회 (DB 조회)
+    mapped_cctv_no = cctv_idx
+    
+    # UUID 형식이 아닌 경우(예: CCTV_01) DB에서 조회 시도
+    if len(cctv_idx) < 30:  # UUID는 36자
+        db = get_db()
+        if db.is_enabled():
+            cctv_info = await db.get_cctv_info_by_idx(cctv_idx)
+            if cctv_info:
+                mapped_cctv_no = cctv_info['cctv_no']
+                # DB에 저장된 영상 주소가 있고, 요청 파라미터로 video_path가 안 왔다면 DB 값 사용
+                if not video_path and cctv_info.get('stream_url'):
+                    video_path = cctv_info['stream_url']
+                    logger.info(f"✅ DB 영상 주소 사용: {video_path}")
+                
+                logger.info(f"✅ CCTV ID 매핑 성공: {cctv_idx} -> {mapped_cctv_no}")
+            else:
+                logger.warning(f"⚠️ CCTV ID 매핑 실패: {cctv_idx} (DB에 해당 cctv_idx가 없습니다)")
+                # 실패해도 일단 진행 (혹시 사용자가 UUID를 보냈을 수도 있으므로)
+
+    # 임시: video_path가 없으면 기본 테스트 영상 사용 (DB에도 없을 경우)
     if not video_path:
         # EC2 환경에 맞는 절대 경로로 수정
         video_path = "/home/ubuntu/storage/m3/IMG_3577.mov"
         if not os.path.exists(video_path):
              # 로컬 테스트용 백업 경로 (윈도우 등)
              video_path = "./video/IMG_3544.mov"
-        
-    # CCTV ID 매핑 적용
-    mapped_cctv_no = CCTV_MAPPING.get(cctv_no, cctv_no)
+        logger.info(f"⚠️ 기본 영상 경로 사용: {video_path}")
     
     m3_api.start_background_task(video_path=video_path, cctv_no=mapped_cctv_no)
     
-    # 더미 데이터 생성기 시작 (최초 1회만)
-    global dummy_thread_started
-    if not dummy_thread_started:
-        # P2PNet 모델 확인을 위해 잠시 주석 처리 (나중에 주석 해제하면 1, 2번 기능 동작)
-        # dummy_thread = threading.Thread(target=run_dummy_generator, daemon=True)
-        # dummy_thread.start()
-        # dummy_thread_started = True
-        logger.info("ℹ️ 더미 데이터 생성기는 현재 비활성화 상태입니다. (P2PNet 단독 테스트)")
+    # 더미 데이터 생성기 시작 (최초 1회만, 분석 시작과 함께 활성화)
+    # global dummy_thread_started
+    # if not dummy_thread_started:
+    #     logger.info("ℹ️ 더미 데이터 생성기 시작 (분석되지 않는 나머지 CCTV용)")
+    #     dummy_thread = threading.Thread(target=run_dummy_generator, daemon=True)
+    #     dummy_thread.start()
+    #     dummy_thread_started = True
 
-    logger.info(f"▶️ 분석 시작 요청: {cctv_no} -> {mapped_cctv_no} (Source: {video_path})")
-    return {"status": "started", "cctv_no": cctv_no, "mapped_id": mapped_cctv_no, "source": video_path}
+    logger.info(f"▶️ 분석 시작 요청: {cctv_idx} -> {mapped_cctv_no} (Source: {video_path})")
+    return {"status": "started", "cctv_idx": cctv_idx, "mapped_id": mapped_cctv_no, "source": video_path}
 
 
 @app.post("/control/stop")
-async def stop_analysis(cctv_no: str):
+async def stop_analysis(cctv_idx: str):
     """
     분석 중지 (On-Demand)
     """
     if m3_api and hasattr(m3_api, 'processor'):
         m3_api.processor.stop()
-        logger.info(f"⏹️ 분석 중지 요청: {cctv_no}")
-        return {"status": "stopped", "cctv_no": cctv_no}
+        logger.info(f"⏹️ 분석 중지 요청: {cctv_idx}")
+        return {"status": "stopped", "cctv_idx": cctv_idx}
     
     return {"status": "error", "message": "Processor not active"}
 

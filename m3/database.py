@@ -14,9 +14,9 @@ from dotenv import load_dotenv
 
 from pathlib import Path
 
-env_path = Path("/home/ubuntu/p2pnet-api/.env")
+# env_path = Path("/home/ubuntu/p2pnet-api/.env")
+env_path = Path("C:/Users/kyj/OneDrive/Desktop/p2pnet_package/m3/.env")
 load_dotenv(dotenv_path=env_path)
-# load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +92,62 @@ class SupabaseDB:
             logger.error(f"❌ 분석 결과 저장 실패: {str(e)}")
             return None
     
+    async def get_cctv_info_by_idx(self, cctv_idx: str) -> Optional[Dict[str, Any]]:
+        """
+        cctv_idx ("CCTV_01")로 CCTV 정보 (UUID, URL 등) 조회
+        
+        Args:
+            cctv_idx: CCTV 인덱스 (예: "CCTV_01")
+        
+        Returns:
+            dict: {
+                'cctv_no': UUID,
+                'stream_url': 스트리밍 주소
+            } 또는 None
+        """
+        if not self.is_enabled():
+            return None
+        
+        try:
+            # cctv_idx 컬럼으로 조회 (stream_url 포함)
+            response = self.client.table('COM_CCTV').select('cctv_no, stream_url').eq('cctv_idx', cctv_idx).execute()
+            
+            if response.data and len(response.data) > 0:
+                data = response.data[0]
+                stream_url = data.get('stream_url')
+                
+                # [자동 경로 변환 로직]
+                # DB에 저장된 경로가 로컬/서버 환경과 다를 경우 자동으로 변환하여 확인
+                if stream_url and not stream_url.startswith(('http', 'rtsp')):
+                    # 1. 원본 경로가 존재하면 그대로 사용
+                    if os.path.exists(stream_url):
+                        pass
+                    else:
+                        # 2. 파일명만 추출
+                        filename = os.path.basename(stream_url)
+                        
+                        # 3. 로컬 테스트 경로 (Windows)
+                        local_path = f"C:/Users/kyj/OneDrive/Desktop/p2pnet_package/m3/video/{filename}"
+                        
+                        # 4. 서버 운영 경로 (Linux)
+                        server_path = f"/home/ubuntu/storage/m3/{filename}"
+                        
+                        if os.path.exists(local_path):
+                            logger.info(f"🔄 경로 자동 변환 (Local): {stream_url} -> {local_path}")
+                            data['stream_url'] = local_path
+                        elif os.path.exists(server_path):
+                            logger.info(f"🔄 경로 자동 변환 (Server): {stream_url} -> {server_path}")
+                            data['stream_url'] = server_path
+                        else:
+                            logger.warning(f"⚠️ 영상 파일을 찾을 수 없음: {stream_url} (Local/Server 경로 모두 없음)")
+                
+                return data
+            return None
+            
+        except Exception as e:
+            logger.error(f"❌ CCTV 정보 조회 실패 ({cctv_idx}): {str(e)}")
+            return None
+
     async def get_test_cctv_no(self) -> Optional[str]:
         """
         테스트용 CCTV 번호(UUID) 조회 (COM_CCTV 테이블에서 1개)

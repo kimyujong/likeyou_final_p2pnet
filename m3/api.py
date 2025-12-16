@@ -71,12 +71,14 @@ class M3CongestionAPI:
             
         model.eval()
         
-        # M3 분석기
+        # M3 분석기 (개선된 파라미터 적용)
         self.analyzer = M3CongestionAnalyzer(
             model=model,
             device=device_obj,
             roi_polygon=roi_polygon,
-            max_capacity=max_capacity
+            max_capacity=max_capacity,
+            # [신규] Adaptive ROI 활성화 (고정 ROI가 없을 때만)
+            use_adaptive_roi=(roi_polygon is None)
         )
         
         # 알림 시스템
