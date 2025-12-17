@@ -66,6 +66,7 @@ app.add_middleware(
 # 전역 변수
 m3_api = None
 dummy_thread_started = False  # 더미 스레드 실행 여부 체크
+dummy_generator_instance = None # [추가] 더미 생성기 인스턴스 저장용
 
 # Pydantic 모델
 class AnalysisResponse(BaseModel):
@@ -90,10 +91,15 @@ class VideoAnalysisRequest(BaseModel):
 
 # 더미 생성기 실행 함수
 def run_dummy_generator():
+    global dummy_generator_instance
     try:
-        logger.info("🤖 Starting Dummy Data Generator in background...")
-        generator = DummyGenerator()
-        generator.run()
+        # [수정] 5초 지연 후 시작 (Race Condition 방지)
+        import time
+        logger.info("🤖 Starting Dummy Data Generator in background... (Delayed 5s)")
+        time.sleep(5) 
+        
+        dummy_generator_instance = DummyGenerator()
+        dummy_generator_instance.run()
     except Exception as e:
         logger.error(f"❌ Dummy Generator failed: {e}")
 
@@ -203,13 +209,13 @@ async def start_analysis(cctv_idx: str, video_path: Optional[str] = None):
         db_cctv_uuid=db_save_uuid
     )
     
-    # 더미 데이터 생성기 시작 (최초 1회만, 분석 시작과 함께 활성화)
-    # global dummy_thread_started
-    # if not dummy_thread_started:
-    #     logger.info("ℹ️ 더미 데이터 생성기 시작 (분석되지 않는 나머지 CCTV용)")
-    #     dummy_thread = threading.Thread(target=run_dummy_generator, daemon=True)
-    #     dummy_thread.start()
-    #     dummy_thread_started = True
+
+    global dummy_thread_started
+    if not dummy_thread_started:
+        logger.info("ℹ️ 더미 데이터 생성기 시작 (분석되지 않는 나머지 CCTV용)")
+        dummy_thread = threading.Thread(target=run_dummy_generator, daemon=True)
+        dummy_thread.start()
+        dummy_thread_started = True
 
     logger.info(f"▶️ 분석 시작 요청: {cctv_idx} -> {mapped_cctv_no} (Source: {video_path})")
     return {"status": "started", "cctv_idx": cctv_idx, "mapped_id": mapped_cctv_no, "source": video_path}

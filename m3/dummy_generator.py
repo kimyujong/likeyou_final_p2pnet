@@ -42,7 +42,7 @@ class DummyGenerator:
             raise ValueError("SUPABASE_URL or SUPABASE_KEY missing in .env")
             
         self.supabase: Client = create_client(url, key)
-        self.interval = 60 # 10초 주기
+        self.interval = 30 # 10초 주기
         
     def get_all_cctvs(self) -> Set[str]:
         """모든 CCTV ID 조회"""
