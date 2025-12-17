@@ -14,7 +14,7 @@ jobs:
       - name: Deploy to GPU Server
         uses: appleboy/ssh-action@v1.0.0
         with:
-          host: ${{ secrets.GPU_EC2_HOST }}  # GPU 서버용 시크릿 필요
+          host: ${{ secrets.EC2_HOST }}  # GPU 서버용 시크릿 필요
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
