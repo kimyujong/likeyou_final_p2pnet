@@ -158,35 +158,34 @@ class DummyGenerator:
             log(f"❌ Error inserting dummy data: {e}")
 
     def run(self):
-        log("🚀 Starting M3 Dummy Data Generator...")
+        log("🚀 Starting M3 Dummy Data Generator (One-time Execution)...")
         log("   (Generates data for inactive CCTVs only)")
         
-        while self.running:
-            try:
-                # 1. 전체 목록
-                all_ids = self.get_all_cctvs()
-                if not all_ids:
-                    log("⚠️ No CCTVs found in DB. Retrying...")
-                    time.sleep(self.interval)
-                    continue
-                
-                # 2. 활성 목록
-                active_ids = self.get_active_cctvs()
-                
-                # 3. 대상 선정 (Target = All - Active)
-                target_ids = list(all_ids - active_ids)
-                
-                log(f"📊 Stats: All={len(all_ids)}, Active={len(active_ids)}, Dummy-Target={len(target_ids)}")
-                
-                # 4. 데이터 삽입
-                if target_ids:
-                    self.insert_dummy_data(target_ids)
-                
-            except Exception as e:
-                log(f"❌ Unexpected error: {e}")
+        try:
+            # 1. 전체 목록
+            all_ids = self.get_all_cctvs()
+            if not all_ids:
+                log("⚠️ No CCTVs found in DB. Skipping dummy generation.")
+                return
             
-            # 대기
-            time.sleep(self.interval)
+            # 2. 활성 목록 (이미 분석 시작된 것들 제외)
+            active_ids = self.get_active_cctvs()
+            
+            # 3. 대상 선정 (Target = All - Active)
+            target_ids = list(all_ids - active_ids)
+            
+            log(f"📊 Stats: All={len(all_ids)}, Active={len(active_ids)}, Dummy-Target={len(target_ids)}")
+            
+            # 4. 데이터 삽입
+            if target_ids:
+                self.insert_dummy_data(target_ids)
+            else:
+                log("ℹ️ No target CCTVs for dummy generation.")
+            
+        except Exception as e:
+            log(f"❌ Unexpected error in dummy generator: {e}")
+        
+        log("🏁 Dummy generation completed.")
 
 if __name__ == "__main__":
     generator = DummyGenerator()

@@ -96,7 +96,7 @@ def run_dummy_generator():
         # [수정] 5초 지연 후 시작 (Race Condition 방지)
         import time
         logger.info("🤖 Starting Dummy Data Generator in background... (Delayed 5s)")
-        time.sleep(5) 
+        time.sleep(10) 
         
         dummy_generator_instance = DummyGenerator()
         dummy_generator_instance.run()
