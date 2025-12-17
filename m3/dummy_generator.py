@@ -43,6 +43,12 @@ class DummyGenerator:
             
         self.supabase: Client = create_client(url, key)
         self.interval = 30 # 10초 주기
+        self.running = True
+        
+    def stop(self):
+        """더미 생성 중단"""
+        self.running = False
+        log("🛑 Stopping dummy generator...")
         
     def get_all_cctvs(self) -> Set[str]:
         """모든 CCTV ID 조회"""
@@ -70,12 +76,34 @@ class DummyGenerator:
             
             for row in res.data:
                 detected_at_str = row['detected_at']
-                # ISO format parsing (Handle Z)
-                detected_at_str = detected_at_str.replace('Z', '+00:00')
-                detected_at = datetime.fromisoformat(detected_at_str)
-                
-                if detected_at > threshold:
-                    active_ids.add(row['cctv_no'])
+                try:
+                    # ISO format parsing 개선
+                    # 1. Z 처리
+                    detected_at_str = detected_at_str.replace('Z', '+00:00')
+                    
+                    # 2. 파이썬 버전에 따라 fromisoformat이 Timezone을 못 읽을 수 있음
+                    # 간단하게 문자열 파싱 (YYYY-MM-DDTHH:MM:SS...)
+                    # .f(마이크로초)가 있거나 없거나, +HH:MM이 있거나 없거나 복잡함
+                    
+                    if '.' in detected_at_str:
+                        # 소수점 이하가 너무 길면 잘라내기 (6자리까지만 허용되는 경우 있음)
+                        base, rest = detected_at_str.split('.')
+                        if '+' in rest:
+                            micro, tz = rest.split('+')
+                            detected_at_str = f"{base}.{micro[:6]}+{tz}"
+                        elif '-' in rest: # - timezone
+                            micro, tz = rest.split('-')
+                            detected_at_str = f"{base}.{micro[:6]}-{tz}"
+                        else:
+                            detected_at_str = f"{base}.{rest[:6]}"
+                            
+                    detected_at = datetime.fromisoformat(detected_at_str)
+                    
+                    if detected_at > threshold:
+                        active_ids.add(row['cctv_no'])
+                        
+                except ValueError:
+                    continue
             
             return active_ids
         except Exception as e:
@@ -133,7 +161,7 @@ class DummyGenerator:
         log("🚀 Starting M3 Dummy Data Generator...")
         log("   (Generates data for inactive CCTVs only)")
         
-        while True:
+        while self.running:
             try:
                 # 1. 전체 목록
                 all_ids = self.get_all_cctvs()
