@@ -33,7 +33,7 @@ class VideoProcessor:
         video_path: str,
         cctv_no: str,
         # interval_seconds: int = 60
-        interval_seconds: int = 5,
+        interval_seconds: int = 10,
         roi_params: Optional[Dict[str, float]] = None,
         db_cctv_uuid: Optional[str] = None  # [추가] DB 저장용 ID
     ):
@@ -157,7 +157,7 @@ class VideoProcessor:
 
                 # 4. 대기 (실제 시간 흐름 시뮬레이션)
                 # 분석에 걸린 시간은 무시하고, 단순히 주기만큼 기다림 (요청사항 반영)
-                wait_time = max(0, interval_seconds - 2.0) # 분석 시간 고려하여 조금 뺌
+                wait_time = max(0, interval_seconds - 1.0) # 분석 시간 고려하여 조금 뺌
                 logger.info(f"💤 {wait_time}초 대기...")
                 await asyncio.sleep(wait_time)
                 
