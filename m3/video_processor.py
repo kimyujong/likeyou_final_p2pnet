@@ -33,7 +33,7 @@ class VideoProcessor:
         video_path: str,
         cctv_no: str,
         # interval_seconds: int = 60
-        interval_seconds: int = 3,
+        interval_seconds: int = 5,
         roi_params: Optional[Dict[str, float]] = None,
         db_cctv_uuid: Optional[str] = None  # [추가] DB 저장용 ID
     ):
@@ -80,26 +80,21 @@ class VideoProcessor:
 
         try:
             while not self.stop_event.is_set():
-                # 1. 프레임 캡처 (CPU 환경 고려: 5 -> 1프레임으로 축소)
+                # 0. 목표 지점으로 이동 (Seek)
+                if cap.isOpened():
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame_idx)
+                else:
+                    logger.warning("⚠️ VideoCapture가 닫혀있어 재연결합니다.")
+                    cap = cv2.VideoCapture(video_path)
+                    cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame_idx)
+
+                # 1. 프레임 캡처 (5프레임 연속 읽기)
                 frames_data = []
                 
-                # CPU 모드에서는 속도를 위해 1프레임만 분석
-                # GPU 모드라면 range(3~5) 권장
                 for _ in range(5):
-                    # 객체가 닫혀있을 때만 다시 열기
-                    if not cap.isOpened():
-                        logger.warning("⚠️ VideoCapture가 닫혀있어 재연결합니다.")
-                        cap = cv2.VideoCapture(video_path)
-                        # 재연결 시 현재 위치로 복구
-                        if cap.isOpened():
-                             cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame_idx)
-                    
-                    # [중요] 명시적으로 현재 프레임 위치 확인 (동기화)
-                    # current_frame_idx = cap.get(cv2.CAP_PROP_POS_FRAMES) 
-                    
                     ret, frame = cap.read()
                     
-                    # 영상 끝이면 처음으로 되감기 (무한 루프)
+                    # 영상 끝 처리
                     if not ret:
                         logger.info("🔄 영상 끝 도달, 처음으로 루프")
                         current_frame_idx = 0
@@ -108,116 +103,63 @@ class VideoProcessor:
                         if not ret:
                             logger.error("영상을 읽을 수 없습니다.")
                             break
-                    else:
-                        # 정상적으로 읽었다면 위치 업데이트
-                        current_frame_idx = cap.get(cv2.CAP_PROP_POS_FRAMES)
                     
                     # 분석
                     try:
                         result = self.analyzer.analyze_frame(frame, roi_params=roi_params)
                         frames_data.append(result)
-                        
-                        # [디버깅] 분석 화면 실시간 표시 (서버 환경에서는 주의)
-                        # 필요한 경우 주석 해제하여 사용
-                        try:
-                            vis_frame = frame.copy()
-                            # 점 찍기
-                            if len(result['points']) > 0:
-                                for p in result['points']:
-                                    cv2.circle(vis_frame, (int(p[0]), int(p[1])), 3, (0, 0, 255), -1)
-                            
-                            # 정보 텍스트
-                            text = f"Count: {result['count']} | Density: {result['pct']}% ({result['risk_level'].korean})"
-                            cv2.putText(vis_frame, text, (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
-                            
-                            # 창 띄우기 (제목에 CCTV ID 표시)
-                            # cv2.namedWindow(f"Monitor-{cctv_no}", cv2.WINDOW_NORMAL) # 필요 시 활성화
-                            # cv2.imshow(f"Monitor-{cctv_no}", vis_frame)
-                            # if cv2.waitKey(1) & 0xFF == ord('q'):
-                            #     self.stop_event.set()
-                        except Exception as vis_e:
-                            # GUI 없는 환경에서의 에러 방지
-                            pass
-                            
                     except Exception as e:
                         logger.error(f"프레임 분석 실패: {e}")
-                    
-                    # 0.5초 대기 (프레임 간 간격)
-                    await asyncio.sleep(0.5)
-                
+
                 if not frames_data:
                     logger.warning("분석된 프레임이 없습니다. 다음 주기로 넘어갑니다.")
-                    await asyncio.sleep(10)
+                    await asyncio.sleep(5)
                     continue
-                
-                # 2. 중앙값 계산 (안정화)
-                # 인원수 기준으로 중앙값에 해당하는 결과 선택
+
+                # 2. 중앙값 계산 및 DB 저장 (기존 로직 유지)
                 counts = [r['count'] for r in frames_data]
                 median_count = statistics.median(counts)
-                
-                # 중앙값과 가장 가까운 결과 찾기
                 final_result = min(frames_data, key=lambda x: abs(x['count'] - median_count))
                 
-                # 3. 위험 등급 확인
-                # risk_level 문자열을 숫자로 변환 (1:안전, 2:주의, 3:경고, 4:위험)
                 risk_level_map = {'안전': 1, '주의': 2, '경고': 3, '위험': 4}
                 current_risk_int = risk_level_map.get(final_result['risk_level'].korean, 1)
                 
-                # 4. DB 저장 판단 (상태 변화 OR 주기적 갱신)
-                # 여기서는 '주기적 갱신'이 기본이므로 무조건 저장하되, 
-                # 상태가 변했을 때는 로그를 다르게 남길 수 있음.
-                
                 is_status_changed = (current_risk_int != last_risk_level_int)
-                
                 if is_status_changed:
                     logger.info(f"🔄 상태 변경 감지 ({cctv_no}): {last_risk_level_int} -> {current_risk_int}")
                 
-                # DB 저장
                 try:
                     await save_detection(
-                        cctv_no=save_target_id,  # [수정] DB 저장용 ID 사용
+                        cctv_no=save_target_id,
                         person_count=final_result['count'],
                         congestion_level=int(final_result['pct']),
                         risk_level_int=current_risk_int
                     )
                     last_risk_level_int = current_risk_int
                     logger.info(f"💾 DB 저장 완료 ({cctv_no}): {final_result['count']}명, {final_result['risk_level'].korean}")
-                    
                 except Exception as e:
                     logger.error(f"DB 저장 실패: {e}")
                 
-                # 5. 다음 주기까지 대기 및 영상 건너뛰기
-                # 분석에 걸린 시간(약 2.5초)을 고려하여 남은 시간만큼 대기
-                wait_time = max(0, interval_seconds - 2.5)
+                # 3. 다음 분석 위치 계산 (현재 + 3초)
+                prev_frame_idx = current_frame_idx
+                frames_to_skip = int(interval_seconds * fps)
+                current_frame_idx += frames_to_skip
+                
+                # 전체 프레임 초과 시 루프 처리
+                if total_frames > 0 and current_frame_idx >= total_frames:
+                    current_frame_idx = current_frame_idx % total_frames
+                    logger.info("🔄 영상 루프 예정")
+
+                # 시간 정보 로깅
+                current_sec = prev_frame_idx / fps if fps else 0
+                next_sec = current_frame_idx / fps if fps else 0
+                logger.info(f"⏩ 다음 분석 대기: {current_sec:.1f}s -> {next_sec:.1f}s (Frame: {int(prev_frame_idx)} -> {int(current_frame_idx)})")
+
+                # 4. 대기 (실제 시간 흐름 시뮬레이션)
+                # 분석에 걸린 시간은 무시하고, 단순히 주기만큼 기다림 (요청사항 반영)
+                wait_time = max(0, interval_seconds - 2.0) # 분석 시간 고려하여 조금 뺌
                 logger.info(f"💤 {wait_time}초 대기...")
                 await asyncio.sleep(wait_time)
-                
-                # [중요] 현실 시간이 흐른 만큼 영상 위치도 강제로 이동 (Sync)
-                # 현재 위치에서 interval_seconds 만큼 점프 (Frame 단위로 변경하여 정확도 향상)
-                if cap.isOpened():
-                    try:
-                        # current_frame = cap.get(cv2.CAP_PROP_POS_FRAMES) # 기존 방식
-                        # 직접 관리하는 변수 사용
-                        frames_to_skip = int(interval_seconds * fps)
-                        next_frame = current_frame_idx + frames_to_skip
-                        
-                        # 전체 프레임을 초과하면 처음으로 루프
-                        if total_frames > 0 and next_frame >= total_frames:
-                            next_frame = next_frame % total_frames
-                            logger.info("🔄 영상 루프 (처음으로 이동)")
-
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, next_frame)
-                        current_frame_idx = next_frame # 위치 변수 업데이트
-                        
-                        # 시간 정보 계산 (로깅용)
-                        current_sec = (current_frame_idx - frames_to_skip) / fps if fps else 0
-                        next_sec = next_frame / fps if fps else 0
-                        logger.info(f"⏩ 영상 점프: {current_sec:.1f}s -> {next_sec:.1f}s (Frame: {int(current_frame_idx - frames_to_skip)} -> {int(next_frame)})")
-                    except Exception as seek_e:
-                        logger.error(f"영상 탐색 오류: {seek_e}")
-                        # 오류 시 강제로 다음 프레임으로 조금만 이동
-                        current_frame_idx += 30
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame_idx)
                 
         finally:
             cap.release()
