@@ -33,7 +33,7 @@ class VideoProcessor:
         video_path: str,
         cctv_no: str,
         # interval_seconds: int = 60
-        interval_seconds: int = 10,
+        interval_seconds: int = 20,
         roi_params: Optional[Dict[str, float]] = None,
         db_cctv_uuid: Optional[str] = None  # [추가] DB 저장용 ID
     ):

@@ -125,7 +125,7 @@ class DummyGenerator:
                 batch = payload[i:i+chunk_size]
                 self.supabase.table("DAT_Crowd_Detection").insert(batch).execute()
                 
-            log(f"✅ Inserted dummy data for {len(cctv_ids)} CCTVs.")
+            log(f"✅ [Dummy] {len(cctv_ids)}개 CCTV 데이터 생성됨.")
         except Exception as e:
             log(f"❌ Error inserting dummy data: {e}")
 
