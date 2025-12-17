@@ -47,6 +47,9 @@ class VideoProcessor:
             roi_params: CCTV별 맞춤 ROI 파라미터 (없으면 기본값)
             db_cctv_uuid: DB 저장에 사용할 UUID (없으면 cctv_no 사용)
         """
+        # [중요] 재시작 시 멈춤 신호 초기화
+        self.stop_event.clear()
+
         if not os.path.exists(video_path):
             logger.error(f"영상 파일을 찾을 수 없습니다: {video_path}")
             return
