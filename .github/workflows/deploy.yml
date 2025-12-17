@@ -51,7 +51,7 @@ jobs:
             
             # 4-3. PM2 새로 시작 (가상환경 인터프리터 명시)
             pm2 start server.py --name "m3-gpu" \
-              --interpreter /home/ubuntu/p2pnet-api/p2pnet_env/bin/python \
+              --interpreter /home/ubuntu/p2pnet_env/bin/python \
               --time
             
             pm2 save
