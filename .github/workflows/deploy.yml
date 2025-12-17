@@ -39,6 +39,21 @@ jobs:
             
             # 4. PM2 프로세스 재시작 (ecosystem 파일 없음!)
             # 아까 pm2 start ... --name "m3-gpu" 로 실행했으므로 이름으로 재시작
-            pm2 restart m3-gpu --update-env
+            pm2 delete m3-gpu || true
+            
+            # 4-2. (중요) 8003 포트를 잡고 있는 좀비 프로세스 확실히 사살
+            # fuser 명령어로 8003/tcp 포트 사용 프로세스를 찾아서 kill (-k)
+            # fuser가 없을 수도 있으니 lsof나 netstat 대용도 고려하지만, 보통 ubuntu엔 fuser 설치됨
+            fuser -k 8003/tcp || true
+            
+            # 잠시 대기 (OS가 리소스 정리할 시간)
+            sleep 2
+            
+            # 4-3. PM2 새로 시작 (가상환경 인터프리터 명시)
+            pm2 start /home/ubuntu/p2pnet_env/bin/python \
+              --name "m3-gpu" \
+              -- /home/ubuntu/p2pnet-api/m3/server.py
+            
+            pm2 save
             
             echo "✅ 배포 완료!"
