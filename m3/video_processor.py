@@ -32,15 +32,20 @@ class VideoProcessor:
         self,
         video_path: str,
         cctv_no: str,
-        interval_seconds: int = 60
+        # interval_seconds: int = 60
+        interval_seconds: int = 3,
+        roi_params: Optional[Dict[str, float]] = None,
+        db_cctv_uuid: Optional[str] = None  # [추가] DB 저장용 ID
     ):
         """
         영상 스트리밍 시뮬레이션 (무한 루프 + 1분 주기 분석)
         
         Args:
             video_path: 영상 파일 경로
-            cctv_no: CCTV 식별자
+            cctv_no: CCTV 식별자 (ROI 조회용)
             interval_seconds: 분석 주기 (초)
+            roi_params: CCTV별 맞춤 ROI 파라미터 (없으면 기본값)
+            db_cctv_uuid: DB 저장에 사용할 UUID (없으면 cctv_no 사용)
         """
         if not os.path.exists(video_path):
             logger.error(f"영상 파일을 찾을 수 없습니다: {video_path}")
@@ -48,7 +53,15 @@ class VideoProcessor:
             
         logger.info(f"🚀 M3 시뮬레이션 시작: {cctv_no} ({interval_seconds}초 주기)")
         logger.info(f"📂 영상 소스: {video_path}")
+        if roi_params:
+            logger.info(f"🔧 [{cctv_no}] ROI 적용: {roi_params}")
+        else:
+            logger.info(f"🔧 [{cctv_no}] 기본 ROI 설정 사용")
         
+        # DB 저장용 ID 결정 (uuid가 전달되면 그것을, 아니면 cctv_no를 사용)
+        save_target_id = db_cctv_uuid if db_cctv_uuid else cctv_no
+        logger.info(f"💾 DB 저장 타겟: {save_target_id}")
+
         cap = cv2.VideoCapture(video_path)
         last_risk_level_int = -1
         
@@ -59,7 +72,7 @@ class VideoProcessor:
                 
                 # CPU 모드에서는 속도를 위해 1프레임만 분석
                 # GPU 모드라면 range(3~5) 권장
-                for _ in range(1):
+                for _ in range(5):
                     if not cap.isOpened():
                         cap = cv2.VideoCapture(video_path)
                     
@@ -75,8 +88,31 @@ class VideoProcessor:
                     
                     # 분석
                     try:
-                        result = self.analyzer.analyze_frame(frame)
+                        result = self.analyzer.analyze_frame(frame, roi_params=roi_params)
                         frames_data.append(result)
+                        
+                        # [디버깅] 분석 화면 실시간 표시 (서버 환경에서는 주의)
+                        # 필요한 경우 주석 해제하여 사용
+                        try:
+                            vis_frame = frame.copy()
+                            # 점 찍기
+                            if len(result['points']) > 0:
+                                for p in result['points']:
+                                    cv2.circle(vis_frame, (int(p[0]), int(p[1])), 3, (0, 0, 255), -1)
+                            
+                            # 정보 텍스트
+                            text = f"Count: {result['count']} | Density: {result['pct']}% ({result['risk_level'].korean})"
+                            cv2.putText(vis_frame, text, (30, 50), cv2.FONT_HERSHEY_SIMPLEX, 1.2, (0, 255, 0), 3)
+                            
+                            # 창 띄우기 (제목에 CCTV ID 표시)
+                            # cv2.namedWindow(f"Monitor-{cctv_no}", cv2.WINDOW_NORMAL) # 필요 시 활성화
+                            # cv2.imshow(f"Monitor-{cctv_no}", vis_frame)
+                            # if cv2.waitKey(1) & 0xFF == ord('q'):
+                            #     self.stop_event.set()
+                        except Exception as vis_e:
+                            # GUI 없는 환경에서의 에러 방지
+                            pass
+                            
                     except Exception as e:
                         logger.error(f"프레임 분석 실패: {e}")
                     
@@ -113,7 +149,7 @@ class VideoProcessor:
                 # DB 저장
                 try:
                     await save_detection(
-                        cctv_no=cctv_no,
+                        cctv_no=save_target_id,  # [수정] DB 저장용 ID 사용
                         person_count=final_result['count'],
                         congestion_level=int(final_result['pct']),
                         risk_level_int=current_risk_int

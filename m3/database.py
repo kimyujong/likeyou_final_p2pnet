@@ -16,6 +16,7 @@ from pathlib import Path
 
 env_path = Path("/home/ubuntu/p2pnet-api/.env")
 # env_path = Path("C:/Users/kyj/OneDrive/Desktop/p2pnet_package/m3/.env")
+# env_path = Path("C:/Users/kyj/OneDrive/Desktop/m3/.env")
 load_dotenv(dotenv_path=env_path)
 
 logger = logging.getLogger(__name__)
@@ -127,7 +128,8 @@ class SupabaseDB:
                         filename = os.path.basename(stream_url)
                         
                         # 3. 로컬 테스트 경로 (Windows)
-                        local_path = f"C:/Users/kyj/OneDrive/Desktop/p2pnet_package/m3/video/{filename}"
+                        # local_path = f"C:/Users/kyj/OneDrive/Desktop/p2pnet_package/m3/video/{filename}"
+                        local_path = f"C:/Users/kyj/OneDrive/Desktop/m3/video/{filename}"
                         
                         # 4. 서버 운영 경로 (Linux)
                         server_path = f"/home/ubuntu/storage/m3/{filename}"

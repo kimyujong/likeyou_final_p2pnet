@@ -73,7 +73,8 @@ class M3CongestionAnalyzer:
     M3 혼잡도 분석 시스템 (orig + develop 성능 개선 병합)
     """
     def __init__(self, model, device, roi_polygon=None, max_capacity=None, 
-                 use_adaptive_roi=True, zone_weights=DEFAULT_ZONE_WEIGHTS):
+                 use_adaptive_roi=True, zone_weights=DEFAULT_ZONE_WEIGHTS,
+                 threshold=DEFAULT_THRESHOLD, roi_params=None):
         """
         Args:
             model: P2PNet 모델 객체
@@ -85,12 +86,13 @@ class M3CongestionAnalyzer:
         self.device = device
         self.roi_polygon = roi_polygon
         self.max_capacity = max_capacity
+        self.threshold = threshold
         
         # [신규] 성능 개선을 위한 설정
         self.use_adaptive_roi = use_adaptive_roi
         self.zone_weights = zone_weights
         self.scene_weights = (zone_weights['near'], zone_weights['mid'], zone_weights['far'])
-        self.roi_params = DEFAULT_ROI_PARAMS
+        self.roi_params = roi_params if roi_params else DEFAULT_ROI_PARAMS
         self.cached_roi = None
         
         # ROI 면적 계산
@@ -193,7 +195,7 @@ class M3CongestionAnalyzer:
         outputs_points = outputs['pred_points'][0]
         
         # 임계값
-        threshold = DEFAULT_THRESHOLD
+        threshold = self.threshold
         
         # 마스크 생성
         mask = outputs_scores > threshold
@@ -247,9 +249,12 @@ class M3CongestionAnalyzer:
         """혼잡도 비율로 위험 등급 판단"""
         return CongestionLevel.get_level(pct)
     
-    def analyze_frame(self, frame):
+    def analyze_frame(self, frame, roi_params=None):
         """
         [업그레이드] 프레임 종합 분석
+        Args:
+            frame: 분석할 프레임 이미지
+            roi_params: (선택) 요청별 커스텀 ROI 파라미터. 없으면 기본 설정 사용.
         """
         h, w = frame.shape[:2]
 
@@ -257,14 +262,29 @@ class M3CongestionAnalyzer:
         count, points, scores = self.predict_count(frame)
 
         # 2. [신규] 신뢰도 및 원근 필터링
-        points = filter_by_confidence(points, scores, threshold=DEFAULT_THRESHOLD)
+        points = filter_by_confidence(points, scores, threshold=self.threshold)
         points = filter_by_perspective(points, h)
 
         # 3. [신규] ROI 설정 (Adaptive or Fixed)
         if self.use_adaptive_roi and self.roi_polygon is None:
-            if self.cached_roi is None:
-                self.cached_roi = auto_roi(frame, **self.roi_params)
-            roi = self.cached_roi
+            # 커스텀 파라미터가 들어오면 캐시를 무시하고 새로 계산하거나, 
+            # 기존 로직을 따르되 파라미터를 우선 적용
+            current_params = roi_params if roi_params else self.roi_params
+            
+            # roi_params가 전달되었거나 캐시가 없으면 새로 생성
+            if roi_params is not None or self.cached_roi is None:
+                # 커스텀 파라미터 사용 시 캐시에 저장하지 않음 (다른 요청 간섭 방지)
+                roi = auto_roi(frame, **current_params)
+                
+                # [디버깅] 100번에 1번만 로그 출력 (너무 많음 방지)
+                # import random
+                # if random.random() < 0.01:
+                #     print(f"🔍 [Analyzer] ROI Params used: {current_params}")
+
+                if roi_params is None: # 기본 파라미터일 때만 캐싱
+                    self.cached_roi = roi
+            else:
+                roi = self.cached_roi
         elif self.roi_polygon:
             roi = np.array(self.roi_polygon, dtype=np.int32)
         else:

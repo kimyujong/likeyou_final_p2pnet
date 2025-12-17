@@ -26,8 +26,9 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 env_path = Path("/home/ubuntu/p2pnet-api/.env")
-# env_path = Path("C:/Users/kyj/OneDrive/Desktop/p2pnet_package/m3/.env")
-load_dotenv(dotenv_path=env_path) # test
+# env_path = Path("C:/Users/user/M3/final/.env")
+# env_path = Path("C:/Users/kyj/OneDrive/Desktop/m3/.env")
+load_dotenv(dotenv_path=env_path)
 
 # M3 모듈 import
 from api import M3CongestionAPI
@@ -158,24 +159,33 @@ async def start_analysis(cctv_idx: str, video_path: Optional[str] = None):
         raise HTTPException(status_code=503, detail="모델이 로드되지 않았습니다.")
     
     # CCTV ID 매핑 및 영상 주소 조회 (DB 조회)
-    mapped_cctv_no = cctv_idx
-    
+    mapped_cctv_no = cctv_idx  # 기본값: 요청받은 ID (CCTV_01 등)
+    db_save_uuid = None        # DB 저장용 UUID
+
     # UUID 형식이 아닌 경우(예: CCTV_01) DB에서 조회 시도
     if len(cctv_idx) < 30:  # UUID는 36자
         db = get_db()
         if db.is_enabled():
             cctv_info = await db.get_cctv_info_by_idx(cctv_idx)
             if cctv_info:
-                mapped_cctv_no = cctv_info['cctv_no']
-                # DB에 저장된 영상 주소가 있고, 요청 파라미터로 video_path가 안 왔다면 DB 값 사용
+                # [수정] DB의 cctv_no가 UUID라면 -> 이것이 실제 DB 저장용 FK
+                if len(cctv_info['cctv_no']) > 30:
+                     db_save_uuid = cctv_info['cctv_no']
+                else:
+                    # DB에도 짧은 ID가 저장되어 있다면 그걸 씀
+                    db_save_uuid = cctv_info['cctv_no']
+                
+                # 영상 주소 조회
                 if not video_path and cctv_info.get('stream_url'):
                     video_path = cctv_info['stream_url']
                     logger.info(f"✅ DB 영상 주소 사용: {video_path}")
                 
-                logger.info(f"✅ CCTV ID 매핑 성공: {cctv_idx} -> {mapped_cctv_no}")
+                logger.info(f"✅ CCTV ID 매핑 성공: {cctv_idx} (DB UUID: {db_save_uuid})")
             else:
                 logger.warning(f"⚠️ CCTV ID 매핑 실패: {cctv_idx} (DB에 해당 cctv_idx가 없습니다)")
-                # 실패해도 일단 진행 (혹시 사용자가 UUID를 보냈을 수도 있으므로)
+    else:
+        # UUID가 직접 들어온 경우
+        db_save_uuid = cctv_idx
 
     # 임시: video_path가 없으면 기본 테스트 영상 사용 (DB에도 없을 경우)
     if not video_path:
@@ -186,7 +196,12 @@ async def start_analysis(cctv_idx: str, video_path: Optional[str] = None):
              video_path = "./video/IMG_3544.mov"
         logger.info(f"⚠️ 기본 영상 경로 사용: {video_path}")
     
-    m3_api.start_background_task(video_path=video_path, cctv_no=mapped_cctv_no)
+    # [수정] mapped_cctv_no(사람이 읽기 쉬운 ID)와 db_save_uuid(DB 저장용 ID)를 함께 전달
+    m3_api.start_background_task(
+        video_path=video_path, 
+        cctv_no=mapped_cctv_no, 
+        db_cctv_uuid=db_save_uuid
+    )
     
     # 더미 데이터 생성기 시작 (최초 1회만, 분석 시작과 함께 활성화)
     # global dummy_thread_started

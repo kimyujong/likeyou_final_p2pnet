@@ -23,7 +23,7 @@ class M3CongestionAPI:
     """
     def __init__(self, model_path, p2pnet_source_path, 
                  device='cuda', max_capacity=DEFAULT_MAX_CAPACITY,
-                 roi_polygon=None, alert_threshold=50, use_fp16=True):
+                 roi_polygon=None, alert_threshold=50, use_fp16=True, **kwargs):
         """
         Args:
             model_path: P2PNet 모델 파일 경로
@@ -33,6 +33,7 @@ class M3CongestionAPI:
             roi_polygon: ROI 다각형 좌표 (선택)
             alert_threshold: 경보 발생 임계값 (%)
             use_fp16: FP16 가속 사용 여부
+            **kwargs: 추가 설정 (threshold, use_adaptive_roi, zone_weights, roi_params 등)
         """
         # P2PNet 소스 경로 추가
         if p2pnet_source_path not in sys.path:
@@ -51,6 +52,12 @@ class M3CongestionAPI:
             device_obj = torch.device('cpu')
         else:
             device_obj = torch.device(device)
+            
+        # [디버깅] 현재 사용 중인 디바이스 출력
+        if device_obj.type == 'cuda':
+            print(f"✅ GPU 가속 활성화: {torch.cuda.get_device_name(0)}")
+        else:
+            print(f"⚠️ CPU 모드로 실행 중 (느림)")
         
         class Args:
             backbone = 'vgg16_bn'
@@ -78,7 +85,10 @@ class M3CongestionAPI:
             roi_polygon=roi_polygon,
             max_capacity=max_capacity,
             # [신규] Adaptive ROI 활성화 (고정 ROI가 없을 때만)
-            use_adaptive_roi=(roi_polygon is None)
+            use_adaptive_roi=kwargs.get('use_adaptive_roi', (roi_polygon is None)),
+            zone_weights=kwargs.get('zone_weights', {'near': 0.5, 'mid': 0.3, 'far': 0.2}),
+            threshold=kwargs.get('threshold', 0.45),
+            roi_params=kwargs.get('roi_params')
         )
         
         # 알림 시스템
@@ -89,17 +99,32 @@ class M3CongestionAPI:
         
         print(f"✅ M3CongestionAPI 초기화 완료")
         
-    def start_background_task(self, video_path, cctv_no, interval_seconds=60):
-        """백그라운드 분석 시작"""
+    def start_background_task(self, video_path, cctv_no, interval_seconds=3, db_cctv_uuid=None):
+        """
+        백그라운드 분석 시작
+        Args:
+            video_path: 영상 경로
+            cctv_no: ROI 조회용 ID (예: CCTV_01)
+            interval_seconds: 분석 주기
+            db_cctv_uuid: DB 저장용 UUID (없으면 cctv_no 사용)
+        """
         if not os.path.exists(video_path):
             print(f"⚠️ 영상 파일 없음: {video_path}")
             return
             
+        # [수정] 1. Config에서 CCTV ID에 맞는 ROI 설정 가져오기
+        from config import M3Config
+        custom_roi_params = M3Config.get_roi_params(cctv_no)
+        
+        print(f"✅ [{cctv_no}] 맞춤 ROI 설정 로드: {custom_roi_params}")
+
         asyncio.create_task(
             self.processor.process_stream_simulation(
                 video_path=video_path,
                 cctv_no=cctv_no,
-                interval_seconds=interval_seconds
+                interval_seconds=interval_seconds,
+                roi_params=custom_roi_params,
+                db_cctv_uuid=db_cctv_uuid  # [추가] DB 저장용 ID 전달
             )
         )
     
