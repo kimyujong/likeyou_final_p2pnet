@@ -75,6 +75,9 @@ class VideoProcessor:
 
         last_risk_level_int = -1
         
+        # [수정] 현재 프레임 위치를 직접 관리 (OpenCV 내부 상태 의존도 낮춤)
+        current_frame_idx = 0.0
+
         try:
             while not self.stop_event.is_set():
                 # 1. 프레임 캡처 (CPU 환경 고려: 5 -> 1프레임으로 축소)
@@ -85,17 +88,29 @@ class VideoProcessor:
                 for _ in range(5):
                     # 객체가 닫혀있을 때만 다시 열기
                     if not cap.isOpened():
+                        logger.warning("⚠️ VideoCapture가 닫혀있어 재연결합니다.")
                         cap = cv2.VideoCapture(video_path)
+                        # 재연결 시 현재 위치로 복구
+                        if cap.isOpened():
+                             cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame_idx)
+                    
+                    # [중요] 명시적으로 현재 프레임 위치 확인 (동기화)
+                    # current_frame_idx = cap.get(cv2.CAP_PROP_POS_FRAMES) 
                     
                     ret, frame = cap.read()
                     
                     # 영상 끝이면 처음으로 되감기 (무한 루프)
                     if not ret:
+                        logger.info("🔄 영상 끝 도달, 처음으로 루프")
+                        current_frame_idx = 0
                         cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
                         ret, frame = cap.read()
                         if not ret:
                             logger.error("영상을 읽을 수 없습니다.")
                             break
+                    else:
+                        # 정상적으로 읽었다면 위치 업데이트
+                        current_frame_idx = cap.get(cv2.CAP_PROP_POS_FRAMES)
                     
                     # 분석
                     try:
@@ -181,9 +196,10 @@ class VideoProcessor:
                 # 현재 위치에서 interval_seconds 만큼 점프 (Frame 단위로 변경하여 정확도 향상)
                 if cap.isOpened():
                     try:
-                        current_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
+                        # current_frame = cap.get(cv2.CAP_PROP_POS_FRAMES) # 기존 방식
+                        # 직접 관리하는 변수 사용
                         frames_to_skip = int(interval_seconds * fps)
-                        next_frame = current_frame + frames_to_skip
+                        next_frame = current_frame_idx + frames_to_skip
                         
                         # 전체 프레임을 초과하면 처음으로 루프
                         if total_frames > 0 and next_frame >= total_frames:
@@ -191,15 +207,17 @@ class VideoProcessor:
                             logger.info("🔄 영상 루프 (처음으로 이동)")
 
                         cap.set(cv2.CAP_PROP_POS_FRAMES, next_frame)
+                        current_frame_idx = next_frame # 위치 변수 업데이트
                         
                         # 시간 정보 계산 (로깅용)
-                        current_sec = current_frame / fps if fps else 0
+                        current_sec = (current_frame_idx - frames_to_skip) / fps if fps else 0
                         next_sec = next_frame / fps if fps else 0
-                        logger.info(f"⏩ 영상 점프: {current_sec:.1f}s -> {next_sec:.1f}s (Frame: {int(current_frame)} -> {int(next_frame)})")
+                        logger.info(f"⏩ 영상 점프: {current_sec:.1f}s -> {next_sec:.1f}s (Frame: {int(current_frame_idx - frames_to_skip)} -> {int(next_frame)})")
                     except Exception as seek_e:
                         logger.error(f"영상 탐색 오류: {seek_e}")
                         # 오류 시 강제로 다음 프레임으로 조금만 이동
-                        cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame + 30)
+                        current_frame_idx += 30
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame_idx)
                 
         finally:
             cap.release()
