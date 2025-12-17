@@ -7,10 +7,10 @@ from enum import Enum
 
 class CongestionLevel(Enum):
     """혼잡도 등급"""
-    SAFE = ("안전", 0, 25, (0, 255, 0))      # 녹색
-    CAUTION = ("주의", 26, 50, (255, 255, 0))  # 노란색
-    WARNING = ("경고", 51, 75, (255, 165, 0))  # 주황색
-    DANGER = ("위험", 76, 100, (255, 0, 0))    # 빨간색
+    SAFE = ("안전", 0, 60, (0, 255, 0))      # 녹색
+    CAUTION = ("주의", 61, 80, (255, 255, 0))  # 노란색
+    WARNING = ("경고", 81, 90, (255, 165, 0))  # 주황색
+    DANGER = ("위험", 91, 100, (255, 0, 0))    # 빨간색
     
     def __init__(self, korean, min_pct, max_pct, color):
         self.korean = korean
