@@ -63,6 +63,16 @@ class VideoProcessor:
         logger.info(f"💾 DB 저장 타겟: {save_target_id}")
 
         cap = cv2.VideoCapture(video_path)
+        
+        # [추가] FPS 및 전체 프레임 수 확인 (Frame 단위 이동을 위해)
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        if fps <= 0:
+            fps = 30.0  # 기본값 설정
+            logger.warning(f"⚠️ FPS를 읽을 수 없어 기본값({fps})을 사용합니다.")
+            
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        logger.info(f"🎞️ 영상 정보: {fps} FPS, 총 {total_frames} 프레임")
+
         last_risk_level_int = -1
         
         try:
@@ -73,6 +83,7 @@ class VideoProcessor:
                 # CPU 모드에서는 속도를 위해 1프레임만 분석
                 # GPU 모드라면 range(3~5) 권장
                 for _ in range(5):
+                    # 객체가 닫혀있을 때만 다시 열기
                     if not cap.isOpened():
                         cap = cv2.VideoCapture(video_path)
                     
@@ -167,12 +178,28 @@ class VideoProcessor:
                 await asyncio.sleep(wait_time)
                 
                 # [중요] 현실 시간이 흐른 만큼 영상 위치도 강제로 이동 (Sync)
-                # 현재 위치에서 interval_seconds 만큼 점프
+                # 현재 위치에서 interval_seconds 만큼 점프 (Frame 단위로 변경하여 정확도 향상)
                 if cap.isOpened():
-                    current_pos = cap.get(cv2.CAP_PROP_POS_MSEC)
-                    next_pos = current_pos + (interval_seconds * 1000)
-                    cap.set(cv2.CAP_PROP_POS_MSEC, next_pos)
-                    logger.info(f"⏩ 영상 점프: {current_pos/1000:.1f}s -> {next_pos/1000:.1f}s")
+                    try:
+                        current_frame = cap.get(cv2.CAP_PROP_POS_FRAMES)
+                        frames_to_skip = int(interval_seconds * fps)
+                        next_frame = current_frame + frames_to_skip
+                        
+                        # 전체 프레임을 초과하면 처음으로 루프
+                        if total_frames > 0 and next_frame >= total_frames:
+                            next_frame = next_frame % total_frames
+                            logger.info("🔄 영상 루프 (처음으로 이동)")
+
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, next_frame)
+                        
+                        # 시간 정보 계산 (로깅용)
+                        current_sec = current_frame / fps if fps else 0
+                        next_sec = next_frame / fps if fps else 0
+                        logger.info(f"⏩ 영상 점프: {current_sec:.1f}s -> {next_sec:.1f}s (Frame: {int(current_frame)} -> {int(next_frame)})")
+                    except Exception as seek_e:
+                        logger.error(f"영상 탐색 오류: {seek_e}")
+                        # 오류 시 강제로 다음 프레임으로 조금만 이동
+                        cap.set(cv2.CAP_PROP_POS_FRAMES, current_frame + 30)
                 
         finally:
             cap.release()
