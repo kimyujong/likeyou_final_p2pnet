@@ -499,14 +499,14 @@ async def global_exception_handler(request, exc):
     )
 
 
-if __name__ == "__main__":
-    import uvicorn
+# if __name__ == "__main__":
+#     import uvicorn
     
-    # 서버 실행
-    uvicorn.run(
-        "server:app",
-        host="0.0.0.0",
-        port=8003,
-        reload=True,  # 개발 모드
-        log_level="info"
-    )
+#     # 서버 실행
+#     uvicorn.run(
+#         "server:app",
+#         host="0.0.0.0",
+#         port=8003,
+#         reload=True,  # 개발 모드
+#         log_level="info"
+#     )
