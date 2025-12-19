@@ -16,6 +16,7 @@ import traceback
 import threading
 
 from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks
+from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -59,6 +60,17 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# 정적 파일 서빙 (CCTV 영상)
+video_dir = "/home/ubuntu/storage/m3"
+if not os.path.exists(video_dir):
+    # 로컬 개발 환경용 fallback
+    video_dir = "./video"
+    if not os.path.exists(video_dir):
+        os.makedirs(video_dir)
+    logger.warning(f"⚠️ 운영 환경 비디오 경로를 찾을 수 없어 로컬 경로({video_dir})를 사용합니다.")
+
+app.mount("/videos", StaticFiles(directory=video_dir), name="videos")
 
 # CCTV ID 매핑 (제거됨 - DB 조회 방식으로 변경)
 # CCTV_MAPPING = {}
