@@ -264,6 +264,7 @@ async def analyze_images_once():
     """
     로그인 시 1회: CCTV_05 ~ CCTV_82 대상 이미지(78장) 분석 후 결과를 반환합니다.
     - 이미지 경로: /home/ubuntu/storage/m3/image/dash (1).jpg ~ dash (78).jpg
+    - [변경] M3 모델 분석은 수행하지 않고, dash(번호)별 랜덤 혼잡도 값을 생성하여 반환
     - DB 저장: 하지 않음
     """
     if m3_api is None:
@@ -272,39 +273,34 @@ async def analyze_images_once():
     analyzed_at = datetime.now().isoformat()
     results = {}
 
+    # [변경] dash 번호별 혼잡도 랜덤 범위 설정
+    # - 60~75%: 1~6, 8~11, 14~20, 24, 25, 28~30, 53, 55
+    # - 20~50%: 7, 12, 13, 27, 32, 39, 48, 51, 52, 54, 56, 57
+    # - 0~10% : 21, 22, 23, 26, 31, 33~38, 40~47, 49, 50, 58~78
+    import random
+
+    high = set(range(1, 7)) | set(range(8, 12)) | set(range(14, 21)) | {24, 25} | set(range(28, 31)) | {53, 55}
+    mid = {7, 12, 13, 27, 32, 39, 48, 51, 52, 54, 56, 57}
+    low = {21, 22, 23, 26, 31} | set(range(33, 39)) | set(range(40, 48)) | {49, 50} | set(range(58, 79))
+
     # dash (1).jpg -> CCTV_05 ... dash (78).jpg -> CCTV_82
     for i in range(1, 79):
         cctv_num = i + 4
         cctv_idx = f"CCTV_{cctv_num:02d}"
-        img_path = os.path.join(image_dir, f"dash ({i}).jpg")
 
-        if not os.path.exists(img_path):
-            results[cctv_idx] = {"ok": False, "error": f"image_not_found: {img_path}"}
-            continue
+        if i in high:
+            density = random.randint(60, 75)
+        elif i in mid:
+            density = random.randint(20, 50)
+        else:
+            # 기본은 low 취급 (명시된 low 범위와 동일)
+            density = random.randint(0, 10)
 
-        frame = cv2.imread(img_path)
-        if frame is None:
-            results[cctv_idx] = {"ok": False, "error": f"image_decode_failed: {img_path}"}
-            continue
-
-        try:
-            # analyzer 결과: pct(0~100), risk_level(enum), count 등
-            r = m3_api.analyze_frame(frame)
-            density = float(r.get("pct", 0.0))
-            risk_level = r.get("risk_level")
-            risk_level_ko = getattr(risk_level, "korean", str(risk_level))
-            risk_level_en = getattr(risk_level, "name", str(risk_level))
-
-            results[cctv_idx] = {
-                "ok": True,
-                "density": density,
-                "count": int(r.get("count", 0)),
-                "risk_level": risk_level_ko,
-                "risk_level_en": risk_level_en,
-            }
-        except Exception as e:
-            logger.error(f"❌ 이미지 분석 실패 ({cctv_idx} / {img_path}): {e}")
-            results[cctv_idx] = {"ok": False, "error": str(e)}
+        # 프론트 표시용 최소 필드만 제공 (count/risk_level은 필요 시 추후 확장)
+        results[cctv_idx] = {
+            "ok": True,
+            "density": float(density),
+        }
 
     return {
         "status": "success",
