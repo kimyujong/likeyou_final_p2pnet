@@ -61,9 +61,12 @@ class VideoProcessor:
         else:
             logger.info(f"🔧 [{cctv_no}] 기본 ROI 설정 사용")
         
-        # DB 저장용 ID 결정 (uuid가 전달되면 그것을, 아니면 cctv_no를 사용)
-        save_target_id = db_cctv_uuid if db_cctv_uuid else cctv_no
-        logger.info(f"💾 DB 저장 타겟: {save_target_id}")
+        # DB 저장용 ID 결정 (uuid가 전달되면 그것을, 아니면 None)
+        save_target_id = db_cctv_uuid
+        if not save_target_id:
+            logger.warning(f"⚠️ [{cctv_no}] DB 저장용 UUID가 없습니다. 분석 결과가 DB에 저장되지 않습니다.")
+        else:
+            logger.info(f"💾 DB 저장 타겟: {save_target_id}")
 
         cap = cv2.VideoCapture(video_path)
         
@@ -131,17 +134,22 @@ class VideoProcessor:
                 if is_status_changed:
                     logger.info(f"🔄 상태 변경 감지 ({cctv_no}): {last_risk_level_int} -> {current_risk_int}")
                 
-                try:
-                    await save_detection(
-                        cctv_no=save_target_id,
-                        person_count=final_result['count'],
-                        congestion_level=int(final_result['pct']),
-                        risk_level_int=current_risk_int
-                    )
-                    last_risk_level_int = current_risk_int
-                    logger.info(f"💾 DB 저장 완료 ({cctv_no}): {final_result['count']}명, {final_result['risk_level'].korean}")
-                except Exception as e:
-                    logger.error(f"DB 저장 실패: {e}")
+                # [수정] UUID가 있을 때만 저장 시도
+                if save_target_id:
+                    try:
+                        await save_detection(
+                            cctv_no=save_target_id,
+                            person_count=final_result['count'],
+                            congestion_level=int(final_result['pct']),
+                            risk_level_int=current_risk_int
+                        )
+                        last_risk_level_int = current_risk_int
+                        logger.info(f"💾 DB 저장 완료 ({cctv_no}): {final_result['count']}명, {final_result['risk_level'].korean}")
+                    except Exception as e:
+                        logger.error(f"DB 저장 실패: {e}")
+                else:
+                    # 저장하지 않더라도 로그는 출력 (디버깅용)
+                    logger.info(f"👀 분석 완료 (DB 미저장): {cctv_no} -> {final_result['count']}명, {final_result['risk_level'].korean}")
                 
                 # 3. 다음 분석 위치 계산 (현재 + 3초)
                 prev_frame_idx = current_frame_idx

@@ -1,0 +1,43 @@
+server {
+    listen 80;
+    server_name likeyousafety.cloud; # 도메인 이름 (예시)
+
+    # 1. 메인 API (Spring Boot)
+    location /api {
+        proxy_pass http://localhost:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }
+
+    # 2. 각 모듈별 직접 접근 (테스트용)
+    location /m2 {
+        rewrite ^/m2/(.*) /m2/$1 break;
+        proxy_pass http://localhost:8002;
+    }
+    
+    location /m4 {
+        rewrite ^/m4/(.*) /$1 break; 
+        proxy_pass http://localhost:8004;
+    }
+
+    # [NEW] CCTV 영상 스트리밍 (Server B: GPU 서버로 프록시)
+    # 프론트엔드에서 /videos/CCTV_01.mp4 요청 시 -> http://<Server_B_IP>:8003/videos/CCTV_01.mp4 로 전달
+    location /videos/ {
+        # <Server_B_IP> 부분을 실제 Server B의 Private IP (또는 Elastic IP)로 변경하세요.
+        proxy_pass http://<Server_B_Private_IP>:8003/videos/;
+        proxy_set_header Host $host;
+        
+        # 비디오 스트리밍을 위한 추가 설정
+        proxy_buffering off;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # 프론트엔드 정적 파일 (React) - 필요 시 설정
+    # location / {
+    #     root /var/www/html;
+    #     try_files $uri $uri/ /index.html;
+    # }
+}

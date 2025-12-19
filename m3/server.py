@@ -184,14 +184,21 @@ async def start_analysis(cctv_idx: str, video_path: Optional[str] = None):
     if len(cctv_idx) < 30:  # UUID는 36자
         db = get_db()
         if db.is_enabled():
+            # 1차 시도: 요청받은 ID 그대로 조회
             cctv_info = await db.get_cctv_info_by_idx(cctv_idx)
+            
+            # 2차 시도: 실패 시 하이픈/언더스코어 변환하여 재조회
+            if not cctv_info:
+                alt_idx = cctv_idx.replace('-', '_') if '-' in cctv_idx else cctv_idx.replace('_', '-')
+                logger.info(f"⚠️ 1차 조회 실패. 변환된 ID로 재시도: {alt_idx}")
+                cctv_info = await db.get_cctv_info_by_idx(alt_idx)
+                if cctv_info:
+                    logger.info(f"✅ 2차 조회 성공: {alt_idx}")
+
             if cctv_info:
-                # [수정] DB의 cctv_no가 UUID라면 -> 이것이 실제 DB 저장용 FK
-                if len(cctv_info['cctv_no']) > 30:
+                # DB의 cctv_no가 UUID라면 -> 이것이 실제 DB 저장용 FK
+                if cctv_info['cctv_no']:
                      db_save_uuid = cctv_info['cctv_no']
-                else:
-                    # DB에도 짧은 ID가 저장되어 있다면 그걸 씀
-                    db_save_uuid = cctv_info['cctv_no']
                 
                 # 영상 주소 조회
                 if not video_path and cctv_info.get('stream_url'):
@@ -201,6 +208,8 @@ async def start_analysis(cctv_idx: str, video_path: Optional[str] = None):
                 logger.info(f"✅ CCTV ID 매핑 성공: {cctv_idx} (DB UUID: {db_save_uuid})")
             else:
                 logger.warning(f"⚠️ CCTV ID 매핑 실패: {cctv_idx} (DB에 해당 cctv_idx가 없습니다)")
+                # 매핑 실패 시 UUID가 없으므로 DB 저장이 불가능함 -> 에러 처리 또는 저장 건너뛰기
+                # 여기서는 경고만 하고 진행하되, VideoProcessor에서 저장 실패가 계속 발생할 것임
     else:
         # UUID가 직접 들어온 경우
         db_save_uuid = cctv_idx
