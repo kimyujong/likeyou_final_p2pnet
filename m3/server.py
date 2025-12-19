@@ -72,6 +72,17 @@ if not os.path.exists(video_dir):
 
 app.mount("/videos", StaticFiles(directory=video_dir), name="videos")
 
+# 정적 파일 서빙 (CCTV 이미지)
+image_dir = "/home/ubuntu/storage/m3/image"
+if not os.path.exists(image_dir):
+    # 로컬 개발 환경용 fallback
+    image_dir = "./image"
+    if not os.path.exists(image_dir):
+        os.makedirs(image_dir)
+    logger.warning(f"⚠️ 운영 환경 이미지 경로를 찾을 수 없어 로컬 경로({image_dir})를 사용합니다.")
+
+app.mount("/images", StaticFiles(directory=image_dir), name="images")
+
 # CCTV ID 매핑 (제거됨 - DB 조회 방식으로 변경)
 # CCTV_MAPPING = {}
 
@@ -100,6 +111,13 @@ class VideoAnalysisRequest(BaseModel):
     cctv_no: Optional[str] = "CCTV-01"
     frame_interval: int = 120  # N프레임마다 분석
     max_capacity: Optional[int] = None
+
+class ImageAnalyzeOnceResponse(BaseModel):
+    """로그인 시 1회 이미지 분석 응답"""
+    status: str
+    count: int
+    analyzed_at: str
+    results: dict
 
 # 더미 생성기 실행 함수
 def run_dummy_generator():
@@ -241,6 +259,60 @@ async def start_analysis(cctv_idx: str, video_path: Optional[str] = None):
     logger.info(f"▶️ 분석 시작 요청: {cctv_idx} -> {mapped_cctv_no} (Source: {video_path})")
     return {"status": "started", "cctv_idx": cctv_idx, "mapped_id": mapped_cctv_no, "source": video_path}
 
+@app.post("/control/analyze-images-once", response_model=ImageAnalyzeOnceResponse)
+async def analyze_images_once():
+    """
+    로그인 시 1회: CCTV_05 ~ CCTV_82 대상 이미지(78장) 분석 후 결과를 반환합니다.
+    - 이미지 경로: /home/ubuntu/storage/m3/image/dash (1).jpg ~ dash (78).jpg
+    - DB 저장: 하지 않음
+    """
+    if m3_api is None:
+        raise HTTPException(status_code=503, detail="모델이 로드되지 않았습니다.")
+
+    analyzed_at = datetime.now().isoformat()
+    results = {}
+
+    # dash (1).jpg -> CCTV_05 ... dash (78).jpg -> CCTV_82
+    for i in range(1, 79):
+        cctv_num = i + 4
+        cctv_idx = f"CCTV_{cctv_num:02d}"
+        img_path = os.path.join(image_dir, f"dash ({i}).jpg")
+
+        if not os.path.exists(img_path):
+            results[cctv_idx] = {"ok": False, "error": f"image_not_found: {img_path}"}
+            continue
+
+        frame = cv2.imread(img_path)
+        if frame is None:
+            results[cctv_idx] = {"ok": False, "error": f"image_decode_failed: {img_path}"}
+            continue
+
+        try:
+            # analyzer 결과: pct(0~100), risk_level(enum), count 등
+            r = m3_api.analyze_frame(frame)
+            density = float(r.get("pct", 0.0))
+            risk_level = r.get("risk_level")
+            risk_level_ko = getattr(risk_level, "korean", str(risk_level))
+            risk_level_en = getattr(risk_level, "name", str(risk_level))
+
+            results[cctv_idx] = {
+                "ok": True,
+                "density": density,
+                "count": int(r.get("count", 0)),
+                "risk_level": risk_level_ko,
+                "risk_level_en": risk_level_en,
+            }
+        except Exception as e:
+            logger.error(f"❌ 이미지 분석 실패 ({cctv_idx} / {img_path}): {e}")
+            results[cctv_idx] = {"ok": False, "error": str(e)}
+
+    return {
+        "status": "success",
+        "count": len(results),
+        "analyzed_at": analyzed_at,
+        "results": results,
+    }
+
 
 @app.post("/control/stop")
 async def stop_analysis(cctv_idx: str):
@@ -349,7 +421,8 @@ async def analyze_image(
         risk_level_int = risk_level_map.get(result['risk_level'], 1)
         
         # CCTV ID 매핑 적용
-        mapped_cctv_no = CCTV_MAPPING.get(cctv_no, cctv_no)
+        # (CCTV_MAPPING 제거됨) - 그대로 사용
+        mapped_cctv_no = cctv_no
 
         # Supabase DAT_Crowd_Detection 테이블에 저장
         await save_detection(
