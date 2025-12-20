@@ -99,7 +99,7 @@ class M3CongestionAPI:
         
         print(f"✅ M3CongestionAPI 초기화 완료")
         
-    def start_background_task(self, video_path, cctv_no, interval_seconds=10, db_cctv_uuid=None):
+    def start_background_task(self, video_path, cctv_no, interval_seconds=60, db_cctv_uuid=None):
         """
         백그라운드 분석 시작
         Args:

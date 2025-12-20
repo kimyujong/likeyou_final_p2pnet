@@ -53,11 +53,9 @@
 작업
 1) 신규 엔드포인트 추가 (예: `POST /control/analyze-images-once`)
 2) 내부 로직
-- `dash (1).jpg` ~ `dash (78).jpg` 파일 번호에 매핑된 랜덤 혼잡도 값 생성
-- **실제 AI 분석은 생략** (응답 속도 개선)
-- **High (60~75%)**: 1~6, 8~11, 14~20, 24, 25, 28~30, 53, 55
-- **Mid (20~50%)**: 7, 12, 13, 27, 32, 39, 48, 51, 52, 54, 56, 57
-- **Low (0~10%)**: 나머지
+- `dash (1).jpg` ~ `dash (78).jpg`를 순회하며 이미지 로드(OpenCV)
+- `m3_api.analyzer.analyze_frame(frame)` 실행
+- `pct`(혼잡도 %)를 반환용 `density`로 사용
 - 결과 구조 예시
   - `{"CCTV_05": {"density": 12, "risk_level": "안전"}, ...}`
 
